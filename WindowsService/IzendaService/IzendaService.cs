@@ -5,23 +5,15 @@ using System.Net;
 using System.ServiceProcess;
 using System.Text;
 using System.Timers;
+using System.Diagnostics;
 using System.Configuration;
 
 namespace IzendaService
 {
-	public class CustomWebClient : WebClient
-	{
-		protected override WebRequest GetWebRequest(Uri address)
-		{
-			WebRequest request = (WebRequest) base.GetWebRequest(address);
-			request.PreAuthenticate = true;
-			return request;
-		}
-	}
-
 	public partial class IzendaService : ServiceBase
 	{
 		string rsPath = "";
+		string ssl = "";
 		string timePeriod = "1";
 		string tenants = "";
 		string user = "";
@@ -32,14 +24,18 @@ namespace IzendaService
 		public IzendaService()
 		{
 			InitializeComponent();
+			timer = new Timer();
+			timer.Elapsed += RunScheduledReports;
 		}
 
 		private Timer timer;
-
+		private bool reportsInProcess = false;
 		private void RunScheduledReports(object sender, ElapsedEventArgs elapsedEventArgs)
 		{
-			timer.Stop();
-			string executeResult;
+			if (reportsInProcess) return;
+
+			reportsInProcess = true;
+
 			try
 			{
 				string schedulingLogs = "";
@@ -55,7 +51,8 @@ namespace IzendaService
 						client.UseDefaultCredentials = true;
 					string url = string.Format("{0}?run_scheduled_reports={1}{2}{3}{4}", 
 						rsPath, 
-						timePeriod, 
+						timePeriod,
+						string.IsNullOrEmpty(ssl) ? "" : ("&ssl=" + ssl),
 						string.IsNullOrEmpty(tenants) ? "" : ("&tenants=" + tenants), 
 						string.IsNullOrEmpty(izUser) ? "" : "&izUser=" + izUser, 
 						string.IsNullOrEmpty(izPassword) ? "" : "&izPassword=" + izPassword);
@@ -64,19 +61,20 @@ namespace IzendaService
 						schedulingLogs = reader.ReadToEnd().Replace("<br>", Environment.NewLine).Replace("<br/>", Environment.NewLine);
 					networkStream.Close();
 				}
-				executeResult = "Scheduling operation succeeded. Log which can be parsed: " + schedulingLogs;
+				EventLog.WriteEntry(ServiceName,"Scheduling operation succeeded. Log which can be parsed: " + schedulingLogs, EventLogEntryType.Information);
 			}
 			catch (Exception e)
 			{
-				executeResult = "Scheduling operation failed: " + e.Message;
+				EventLog.WriteEntry(ServiceName, "Scheduling operation failed: " + e.Message, EventLogEntryType.Error);
 			}
-			Log(executeResult);
-			timer.Start();
+
+			reportsInProcess = false;
 		}
 
 		protected override void OnStart(string[] args)
 		{
 			rsPath = (ConfigurationManager.AppSettings["responseServerPath"] ?? "").ToString();
+			ssl = (ConfigurationManager.AppSettings["ssl"] ?? "").ToString();
 			user = (ConfigurationManager.AppSettings["user"] ?? "").ToString();
 			pass = (ConfigurationManager.AppSettings["password"] ?? "").ToString();
 			tenants = (ConfigurationManager.AppSettings["tenants"] ?? "").ToString();
@@ -86,39 +84,22 @@ namespace IzendaService
             int interval = Convert.ToInt32((ConfigurationManager.AppSettings["interval"] ?? "-1").ToString());
 			if (string.IsNullOrEmpty(rsPath))
 			{
-				Log("Response server URL is not specified. Attribute name is 'responseServerPath'");
+				EventLog.WriteEntry(ServiceName, "Response server URL is not specified. Attribute name is 'responseServerPath'", EventLogEntryType.Warning);
 				return;
 			}
 			if (interval <= 0)
 			{
-				Log("Time interval between scheduler runs is not specified. Attribute name is 'interval'");
+				EventLog.WriteEntry(ServiceName, "Time interval between scheduler runs is not specified. Attribute name is 'interval'", EventLogEntryType.Warning);
 				return;
 			}
-			timer = new Timer(interval);
-			timer.Elapsed += RunScheduledReports;
-			RunScheduledReports(null, null);
-			Log("IzendaService started");
+			timer.Interval = interval;
+			timer.Start();
 		}
 
 		protected override void OnStop()
 		{
 			timer.Stop();
 			timer.Close();
-			Log("IzendaService stopped");
-		}
-
-		public void Log(string log)
-		{
-			try
-			{
-				if (!EventLog.SourceExists("IzendaService"))
-					EventLog.CreateEventSource("IzendaService", "IzendaService");
-				eventLog1.Source = "IzendaService";
-				eventLog1.WriteEntry(log);
-			}
-			catch
-			{
-			}
 		}
 	}
 }

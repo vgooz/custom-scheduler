@@ -27,18 +27,10 @@
     /// </summary>
     private void InitializeComponent()
     {
-      this.eventLog1 = new System.Diagnostics.EventLog();
-      ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).BeginInit();
-      // 
-      // IzendaService
-      // 
-      this.ServiceName = "Service1";
-      ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).EndInit();
-
+            components = new System.ComponentModel.Container();
+            this.ServiceName = "IzendaService";
     }
 
     #endregion
-
-    private System.Diagnostics.EventLog eventLog1;
   }
 }
